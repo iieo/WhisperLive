@@ -16,6 +16,7 @@ from whisper_live.backend.base import ServeClientBase
 
 logging.basicConfig(level=logging.INFO)
 
+
 class ClientManager:
     def __init__(self, max_clients=4, max_connection_time=600):
         """
@@ -78,7 +79,8 @@ class ClientManager:
         """
         wait_time = None
         for start_time in self.start_times.values():
-            current_client_time_remaining = self.max_connection_time - (time.time() - start_time)
+            current_client_time_remaining = self.max_connection_time - \
+                (time.time() - start_time)
             if wait_time is None or current_client_time_remaining < wait_time:
                 wait_time = current_client_time_remaining
         return wait_time / 60 if wait_time is not None else 0
@@ -96,7 +98,8 @@ class ClientManager:
         """
         if len(self.clients) >= self.max_clients:
             wait_time = self.get_wait_time()
-            response = {"uid": options["uid"], "status": "WAIT", "message": wait_time}
+            response = {"uid": options["uid"],
+                        "status": "WAIT", "message": wait_time}
             websocket.send(json.dumps(response))
             return True
         return False
@@ -114,7 +117,8 @@ class ClientManager:
         elapsed_time = time.time() - self.start_times[websocket]
         if elapsed_time >= self.max_connection_time:
             self.clients[websocket].disconnect()
-            logging.warning(f"Client with uid '{self.clients[websocket].client_uid}' disconnected due to overtime.")
+            logging.warning(
+                f"Client with uid '{self.clients[websocket].client_uid}' disconnected due to overtime.")
             return True
         return False
 
@@ -123,6 +127,7 @@ class BackendType(Enum):
     FASTER_WHISPER = "faster_whisper"
     TENSORRT = "tensorrt"
     OPENVINO = "openvino"
+    PARAKEET = "parakeet"
 
     @staticmethod
     def valid_types() -> List[str]:
@@ -137,9 +142,12 @@ class BackendType(Enum):
 
     def is_tensorrt(self) -> bool:
         return self == BackendType.TENSORRT
-    
+
     def is_openvino(self) -> bool:
         return self == BackendType.OPENVINO
+
+    def is_parakeet(self) -> bool:
+        return self == BackendType.PARAKEET
 
 
 class TranscriptionServer:
@@ -159,12 +167,12 @@ class TranscriptionServer:
 
         # Check if client wants translation
         enable_translation = options.get("enable_translation", False)
-        
+
         # Create translation queue if translation is enabled
         translation_queue = None
         translation_client = None
         translation_thread = None
-        
+
         if enable_translation:
             target_language = options.get("target_language", "fr")
             translation_queue = queue.Queue()
@@ -176,15 +184,57 @@ class TranscriptionServer:
                 target_language=target_language,
                 send_last_n_segments=options.get("send_last_n_segments", 10)
             )
-            
+
             # Start translation thread
             translation_thread = threading.Thread(
                 target=translation_client.speech_to_text,
                 daemon=True
             )
             translation_thread.start()
-            
-            logging.info(f"Translation enabled for client {options['uid']} with target language: {target_language}")
+
+            logging.info(
+                f"Translation enabled for client {options['uid']} with target language: {target_language}")
+
+# Handle Parakeet backend
+        print(self.backend)
+        if self.backend.is_parakeet():
+            try:
+                from whisper_live.backend.parakeet_backend import ServeClientParakeet
+
+                # Use custom model path if provided, otherwise use default
+                model_name = "nvidia/parakeet-tdt-0.6b-v3"
+                print("serveparakeet")
+                client = ServeClientParakeet(
+                    websocket,
+                    language=options.get("language"),
+                    task=options.get("task", "transcribe"),
+                    client_uid=options["uid"],
+                    model=model_name,
+                    initial_prompt=options.get("initial_prompt"),
+                    vad_parameters=options.get("vad_parameters"),
+                    use_vad=self.use_vad,
+                    single_model=self.single_model,
+                    send_last_n_segments=options.get(
+                        "send_last_n_segments", 10),
+                    no_speech_thresh=options.get("no_speech_thresh", 0.45),
+                    clip_audio=options.get("clip_audio", False),
+                    same_output_threshold=options.get(
+                        "same_output_threshold", 10),
+                    cache_path=self.cache_path,
+                    translation_queue=translation_queue
+                )
+                logging.info("Running Parakeet backend.")
+            except Exception as e:
+                logging.error(f"Parakeet not supported: {e}")
+                self.backend = BackendType.FASTER_WHISPER
+                try:
+                    websocket.send(json.dumps({
+                        "uid": options["uid"],
+                        "status": "WARNING",
+                        "message": f"Parakeet not supported on Server. Reverting to 'faster_whisper': {str(e)}"
+                    }))
+                except:
+                    pass
 
         if self.backend.is_tensorrt():
             try:
@@ -198,10 +248,12 @@ class TranscriptionServer:
                     model=whisper_tensorrt_path,
                     single_model=self.single_model,
                     use_py_session=trt_py_session,
-                    send_last_n_segments=options.get("send_last_n_segments", 10),
+                    send_last_n_segments=options.get(
+                        "send_last_n_segments", 10),
                     no_speech_thresh=options.get("no_speech_thresh", 0.45),
                     clip_audio=options.get("clip_audio", False),
-                    same_output_threshold=options.get("same_output_threshold", 10),
+                    same_output_threshold=options.get(
+                        "same_output_threshold", 10),
                 )
                 logging.info("Running TensorRT backend.")
             except Exception as e:
@@ -214,7 +266,7 @@ class TranscriptionServer:
                                "Reverting to available backend: 'faster_whisper'"
                 }))
                 self.backend = BackendType.FASTER_WHISPER
-        
+
         if self.backend.is_openvino():
             try:
                 from whisper_live.backend.openvino_backend import ServeClientOpenVINO
@@ -225,10 +277,12 @@ class TranscriptionServer:
                     client_uid=options["uid"],
                     model=options["model"],
                     single_model=self.single_model,
-                    send_last_n_segments=options.get("send_last_n_segments", 10),
+                    send_last_n_segments=options.get(
+                        "send_last_n_segments", 10),
                     no_speech_thresh=options.get("no_speech_thresh", 0.45),
                     clip_audio=options.get("clip_audio", False),
-                    same_output_threshold=options.get("same_output_threshold", 10),
+                    same_output_threshold=options.get(
+                        "same_output_threshold", 10),
                 )
                 logging.info("Running OpenVINO backend.")
             except Exception as e:
@@ -239,7 +293,7 @@ class TranscriptionServer:
                     "uid": self.client_uid,
                     "status": "WARNING",
                     "message": "OpenVINO not supported on Server yet. "
-                                "Reverting to available backend: 'faster_whisper'"
+                    "Reverting to available backend: 'faster_whisper'"
                 }))
 
         try:
@@ -247,7 +301,8 @@ class TranscriptionServer:
                 from whisper_live.backend.faster_whisper_backend import ServeClientFasterWhisper
                 # model is of the form namespace/repo_name and not a filesystem path
                 if faster_whisper_custom_model_path is not None:
-                    logging.info(f"Using custom model {faster_whisper_custom_model_path}")
+                    logging.info(
+                        f"Using custom model {faster_whisper_custom_model_path}")
                     options["model"] = faster_whisper_custom_model_path
                 client = ServeClientFasterWhisper(
                     websocket,
@@ -259,10 +314,12 @@ class TranscriptionServer:
                     vad_parameters=options.get("vad_parameters"),
                     use_vad=self.use_vad,
                     single_model=self.single_model,
-                    send_last_n_segments=options.get("send_last_n_segments", 10),
+                    send_last_n_segments=options.get(
+                        "send_last_n_segments", 10),
                     no_speech_thresh=options.get("no_speech_thresh", 0.45),
                     clip_audio=options.get("clip_audio", False),
-                    same_output_threshold=options.get("same_output_threshold", 10),
+                    same_output_threshold=options.get(
+                        "same_output_threshold", 10),
                     cache_path=self.cache_path,
                     translation_queue=translation_queue
                 )
@@ -273,7 +330,8 @@ class TranscriptionServer:
             return
 
         if client is None:
-            raise ValueError(f"Backend type {self.backend.value} not recognised or not handled.")
+            raise ValueError(
+                f"Backend type {self.backend.value} not recognised or not handled.")
 
         if translation_client:
             client.translation_client = translation_client
@@ -320,7 +378,8 @@ class TranscriptionServer:
             logging.info("Connection closed by client")
             return False
         except Exception as e:
-            logging.error(f"Error during new connection initialization: {str(e)}")
+            logging.error(
+                f"Error during new connection initialization: {str(e)}")
             return False
 
     def process_audio_frames(self, websocket):
@@ -343,7 +402,7 @@ class TranscriptionServer:
         return True
 
     def recv_audio(self,
-                   websocket,   
+                   websocket,
                    backend: BackendType = BackendType.FASTER_WHISPER,
                    faster_whisper_custom_model_path=None,
                    whisper_tensorrt_path=None,
@@ -414,18 +473,23 @@ class TranscriptionServer:
         self.cache_path = cache_path
         self.client_manager = ClientManager(max_clients, max_connection_time)
         if faster_whisper_custom_model_path is not None and not os.path.exists(faster_whisper_custom_model_path):
-            raise ValueError(f"Custom faster_whisper model '{faster_whisper_custom_model_path}' is not a valid path.")
+            raise ValueError(
+                f"Custom faster_whisper model '{faster_whisper_custom_model_path}' is not a valid path.")
         if whisper_tensorrt_path is not None and not os.path.exists(whisper_tensorrt_path):
-            raise ValueError(f"TensorRT model '{whisper_tensorrt_path}' is not a valid path.")
+            raise ValueError(
+                f"TensorRT model '{whisper_tensorrt_path}' is not a valid path.")
         if single_model:
             if faster_whisper_custom_model_path or whisper_tensorrt_path:
-                logging.info("Custom model option was provided. Switching to single model mode.")
+                logging.info(
+                    "Custom model option was provided. Switching to single model mode.")
                 self.single_model = True
                 # TODO: load model initially
             else:
-                logging.info("Single model mode currently only works with custom models.")
+                logging.info(
+                    "Single model mode currently only works with custom models.")
         if not BackendType.is_valid(backend):
-            raise ValueError(f"{backend} is not a valid backend type. Choose backend from {BackendType.valid_types()}")
+            raise ValueError(
+                f"{backend} is not a valid backend type. Choose backend from {BackendType.valid_types()}")
         with serve(
             functools.partial(
                 self.recv_audio,
@@ -481,9 +545,8 @@ class TranscriptionServer:
         if client:
             if hasattr(client, 'translation_client') and client.translation_client:
                 client.translation_client.cleanup()
-                
+
             # Wait for translation thread to finish
             if hasattr(client, 'translation_thread') and client.translation_thread:
                 client.translation_thread.join(timeout=2.0)
             self.client_manager.remove_client(websocket)
-
