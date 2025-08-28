@@ -5,13 +5,18 @@ import queue
 import json
 import functools
 import logging
+import tempfile
+import shutil
 from typing import List, Optional
 
 import numpy as np
+import soundfile as sf
 from websockets.sync.server import serve
 from websockets.exceptions import ConnectionClosed
+
 from whisper_live.backend.base import ServeClientBase
 from whisper_live.backend.parakeet_backend import ServeClientParakeet
+from whisper_live.backend.batch_manager import BatchManager
 
 logging.basicConfig(level=logging.INFO)
 
@@ -124,12 +129,15 @@ class ClientManager:
 
 class TranscriptionServer:
     RATE = 16000
+    MODEL_LOCK = threading.Lock()
 
     def __init__(self):
         self.client_manager = None
         self.use_vad = True
         self.single_model = False
         self.preloaded_parakeet_model = None
+        self.batch_manager = None
+        self.temp_dir = tempfile.mkdtemp()
 
     def _preload_parakeet_model(self):
         """Pre-load the parakeet model at server startup"""
@@ -194,6 +202,10 @@ class TranscriptionServer:
 
         # Handle Parakeet backend
         try:
+            if self.single_model and not self.batch_manager:
+                raise RuntimeError(
+                    "Server is in single_model mode but BatchManager is not initialized.")
+
             client = ServeClientParakeet(
                 websocket,
                 language=options.get("language"),
@@ -207,10 +219,10 @@ class TranscriptionServer:
                 no_speech_thresh=options.get("no_speech_thresh", 0.45),
                 clip_audio=options.get("clip_audio", False),
                 same_output_threshold=options.get(
-                    "same_output_threshold", 10),
+                    "same_output_threshold", 7),
                 cache_path=self.cache_path,
                 translation_queue=translation_queue,
-                preloaded_model=self.preloaded_parakeet_model
+                batch_manager=self.batch_manager
             )
             logging.info("Running Parakeet backend.")
         except Exception as e:
@@ -315,6 +327,72 @@ class TranscriptionServer:
                 websocket.close()
             del websocket
 
+    def transcribe_audio_batch(self, input_samples: List[np.ndarray]) -> List[List]:
+        """
+        Transcribe a batch of audio clips using the shared Parakeet model.
+        This method is designed to be called by the BatchManager.
+        """
+        with TranscriptionServer.MODEL_LOCK:
+            batch_results = []
+            temp_paths = []
+            try:
+                for input_sample in input_samples:
+                    temp_fd, temp_path = tempfile.mkstemp(
+                        suffix='.wav', dir=self.temp_dir)
+                    os.close(temp_fd)
+                    temp_paths.append(temp_path)
+
+                    if input_sample.dtype != np.float32:
+                        input_sample = input_sample.astype(np.float32)
+
+                    max_val = np.max(np.abs(input_sample))
+                    if max_val > 1.0:
+                        input_sample = input_sample / max_val
+
+                    sf.write(temp_path, input_sample, self.RATE)
+
+                if not temp_paths:
+                    return []
+
+                outputs = self.preloaded_parakeet_model.transcribe(temp_paths)
+
+                if outputs and len(outputs) == len(input_samples):
+                    for i, output in enumerate(outputs):
+                        transcript_text = (output.text if hasattr(
+                            output, 'text') else str(output)).strip()
+                        if transcript_text:
+                            segment = type('Segment', (), {
+                                'text': transcript_text,
+                                'start': 0.0,
+                                'end': len(input_samples[i]) / self.RATE,
+                                'no_speech_prob': 0.0, 'tokens': [], 'temperature': 0.0,
+                                'avg_logprob': 0.0, 'compression_ratio': 0.0, 'words': None
+                            })()
+                            batch_results.append([segment])
+                        else:
+                            batch_results.append([])
+                else:
+                    batch_results = [[] for _ in input_samples]
+            finally:
+                for path in temp_paths:
+                    if os.path.exists(path):
+                        os.unlink(path)
+            return batch_results
+
+    def _cleanup_server_resources(self):
+        """Clean up server-level resources like the batch manager and temp directory."""
+        logging.info("Cleaning up server resources...")
+        if self.batch_manager:
+            self.batch_manager.stop()
+        if hasattr(self, 'temp_dir') and os.path.exists(self.temp_dir):
+            try:
+                shutil.rmtree(self.temp_dir)
+                logging.info(
+                    f"Cleaned up server temp directory {self.temp_dir}")
+            except OSError as e:
+                logging.error(
+                    f"Error cleaning up server temp directory {self.temp_dir}: {e}")
+
     def run(self,
             host,
             port=8005,
@@ -328,27 +406,36 @@ class TranscriptionServer:
         Args:
             host (str): The host address to bind the server.
             port (int): The port number to bind the server.
-            single_model (bool): If True, pre-loads the Parakeet model on startup.
+            single_model (bool): If True, pre-loads the Parakeet model on startup and enables batching.
             max_clients (int): The maximum number of simultaneous client connections allowed.
             max_connection_time (int): The maximum duration (in seconds) a client can stay connected.
             cache_path (str): Path to cache directory.
         """
-        self.cache_path = cache_path
+        self.cache_path = os.path.expanduser(cache_path)
         self.client_manager = ClientManager(max_clients, max_connection_time)
 
-        # Pre-load parakeet model if single_model mode is enabled
+        # Pre-load parakeet model and initialize batch manager if single_model mode is enabled
         if single_model:
             self.single_model = True
             self._preload_parakeet_model()
+            if self.preloaded_parakeet_model:
+                self.batch_manager = BatchManager(
+                    batch_processor=self.transcribe_audio_batch,
+                    batch_size=max_clients,
+                    batch_timeout=0.1  # 100ms
+                )
 
-        with serve(
-            self.recv_audio,
-            host,
-            port
-        ) as server:
-            logging.info(
-                f"Parakeet Transcription Server is running on {host}:{port}")
-            server.serve_forever()
+        try:
+            with serve(
+                self.recv_audio,
+                host,
+                port
+            ) as server:
+                logging.info(
+                    f"Parakeet Transcription Server is running on {host}:{port}")
+                server.serve_forever()
+        finally:
+            self._cleanup_server_resources()
 
     def cleanup(self, websocket):
         """
