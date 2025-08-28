@@ -24,7 +24,7 @@ class ServeClientTranslation(ServeClientBase):
         client_uid,
         websocket,
         translation_queue,
-        target_language="fr", 
+        target_language="de", 
         send_last_n_segments=10,
         model_name="alirezamsh/small100"
     ):

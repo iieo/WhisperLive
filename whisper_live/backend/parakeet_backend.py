@@ -71,7 +71,7 @@ class ServeClientParakeet(ServeClientBase):
 
         self.cache_path = cache_path
         self.model_name = model
-        self.language = language
+        self.language = "de" if language is None else language
         self.task = task
         self.initial_prompt = initial_prompt
         self.vad_parameters = vad_parameters or {"onset": 0.5}

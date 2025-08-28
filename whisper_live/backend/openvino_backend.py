@@ -57,7 +57,7 @@ class ServeClientOpenVINO(ServeClientBase):
             clip_audio,
             same_output_threshold,
         )
-        self.language = "en" if language is None else language
+        self.language = "de" if language is None else language
         if not self.language.startswith("<|"):
             self.language = f"<|{self.language}|>"
 
