@@ -119,7 +119,8 @@ class Client:
         Client.INSTANCES[self.uid] = self
 
         # start websocket client in a thread
-        self.ws_thread = threading.Thread(target=self.client_socket.run_forever)
+        self.ws_thread = threading.Thread(
+            target=self.client_socket.run_forever)
         self.ws_thread.daemon = True
         self.ws_thread.start()
 
@@ -132,7 +133,8 @@ class Client:
         status = message_data["status"]
         if status == "WAIT":
             self.waiting = True
-            print(f"[INFO]: Server is full. Estimated wait time {round(message_data['message'])} minutes.")
+            print(
+                f"[INFO]: Server is full. Estimated wait time {round(message_data['message'])} minutes.")
         elif status == "ERROR":
             print(f"Message from Server: {message_data['message']}")
             self.server_error = True
@@ -164,28 +166,31 @@ class Client:
         if translated:
             if self.translation_callback and callable(self.translation_callback):
                 try:
-                    self.translation_callback(" ".join(text), segments) # string, list
+                    self.translation_callback(
+                        " ".join(text), segments)  # string, list
                 except Exception as e:
                     print(f"[WARN] translation_callback raised: {e}")
                 return
         else:
             if self.transcription_callback and callable(self.transcription_callback):
                 try:
-                    self.transcription_callback(" ".join(text), segments) # string, list
+                    self.transcription_callback(
+                        " ".join(text), segments)  # string, list
                 except Exception as e:
                     print(f"[WARN] transcription_callback raised: {e}")
                 return
-        
+
         if self.log_transcription:
             original_text = [seg["text"] for seg in self.transcript[-4:]]
             if self.last_segment is not None and self.last_segment["text"] not in original_text:
                 original_text.append(self.last_segment["text"])
-            
+
             utils.clear_screen()
             utils.print_transcript(original_text)
             if self.enable_translation:
                 print(f"\n\nTRANSLATION to {self.target_language}:")
-                utils.print_transcript([seg["text"] for seg in self.translated_transcript[-4:]], translated=True)
+                utils.print_transcript(
+                    [seg["text"] for seg in self.translated_transcript[-4:]], translated=True)
 
     def on_message(self, ws, message):
         """
@@ -231,9 +236,10 @@ class Client:
 
         if "segments" in message.keys():
             self.process_segments(message["segments"])
-        
+
         if "translated_segments" in message.keys():
-            self.process_segments(message["translated_segments"], translated=True)
+            self.process_segments(
+                message["translated_segments"], translated=True)
 
     def on_error(self, ws, error):
         print(f"[ERROR] WebSocket Error: {error}")
@@ -241,7 +247,8 @@ class Client:
         self.error_message = error
 
     def on_close(self, ws, close_status_code, close_msg):
-        print(f"[INFO]: Websocket connection closed: {close_status_code}: {close_msg}")
+        print(
+            f"[INFO]: Websocket connection closed: {close_status_code}: {close_msg}")
         self.recording = False
         self.waiting = False
 
@@ -331,7 +338,8 @@ class Client:
             utils.create_srt_file(self.transcript, output_path)
 
         if self.enable_translation:
-            utils.create_srt_file(self.translated_transcript, self.translation_srt_file_path)
+            utils.create_srt_file(self.translated_transcript,
+                                  self.translation_srt_file_path)
 
     def wait_before_disconnect(self):
         """Waits a bit before disconnecting in order to process pending responses."""
@@ -353,6 +361,7 @@ class TranscriptionTeeClient:
     Attributes:
         clients (list): the underlying Client instances responsible for handling WebSocket connections.
     """
+
     def __init__(self, clients, save_output_recording=False, output_recording_filename="./output_recording.wav", mute_audio_playback=False):
         self.clients = clients
         if not self.clients:
@@ -456,7 +465,8 @@ class TranscriptionTeeClient:
                 self.stream = None
             else:
                 self.stream = self.p.open(
-                    format=self.p.get_format_from_width(wavfile.getsampwidth()),
+                    format=self.p.get_format_from_width(
+                        wavfile.getsampwidth()),
                     channels=wavfile.getnchannels(),
                     rate=wavfile.getframerate(),
                     input=True,
@@ -477,12 +487,13 @@ class TranscriptionTeeClient:
                         time.sleep(chunk_duration)
                     else:
                         self.stream.write(data)
-    
+
                 wavfile.close()
 
                 for client in self.clients:
                     client.wait_before_disconnect()
-                self.multicast_packet(Client.END_OF_AUDIO.encode('utf-8'), True)
+                self.multicast_packet(
+                    Client.END_OF_AUDIO.encode('utf-8'), True)
                 self.write_all_clients_srt()
                 if self.stream:
                     self.stream.close()
@@ -506,7 +517,8 @@ class TranscriptionTeeClient:
         """
         print("[INFO]: Connecting to RTSP stream...")
         try:
-            container = av.open(rtsp_url, format="rtsp", options={"rtsp_transport": "tcp"})
+            container = av.open(rtsp_url, format="rtsp", options={
+                                "rtsp_transport": "tcp"})
             self.process_av_stream(container, stream_type="RTSP")
         except Exception as e:
             print(f"[ERROR]: Failed to process RTSP stream: {e}")
@@ -529,7 +541,8 @@ class TranscriptionTeeClient:
         print("[INFO]: Connecting to HLS stream...")
         try:
             container = av.open(hls_url, format="hls")
-            self.process_av_stream(container, stream_type="HLS", save_file=save_file)
+            self.process_av_stream(
+                container, stream_type="HLS", save_file=save_file)
         except Exception as e:
             print(f"[ERROR]: Failed to process HLS stream: {e}")
         finally:
@@ -549,7 +562,8 @@ class TranscriptionTeeClient:
             stream_type (str): The type of stream being processed ("RTSP" or "HLS").
             save_file (str, optional): Local path to save the stream. Default is None.
         """
-        audio_stream = next((s for s in container.streams if s.type == "audio"), None)
+        audio_stream = next(
+            (s for s in container.streams if s.type == "audio"), None)
         if not audio_stream:
             print(f"[ERROR]: No audio stream found in {stream_type} source.")
             return
@@ -557,7 +571,8 @@ class TranscriptionTeeClient:
         output_container = None
         if save_file:
             output_container = av.open(save_file, mode="w")
-            output_audio_stream = output_container.add_stream(codec_name="pcm_s16le", rate=self.rate)
+            output_audio_stream = output_container.add_stream(
+                codec_name="pcm_s16le", rate=self.rate)
 
         try:
             for packet in container.demux(audio_stream):
@@ -568,7 +583,8 @@ class TranscriptionTeeClient:
                     if save_file:
                         output_container.mux(frame)
         except Exception as e:
-            print(f"[ERROR]: Error during {stream_type} stream processing: {e}")
+            print(
+                f"[ERROR]: Error during {stream_type} stream processing: {e}")
         finally:
             # Wait for server to send any leftover transcription.
             time.sleep(5)
@@ -635,7 +651,8 @@ class TranscriptionTeeClient:
             for _ in range(0, int(self.rate / self.chunk * self.record_seconds)):
                 if not any(client.recording for client in self.clients):
                     break
-                data = self.stream.read(self.chunk, exception_on_overflow=False)
+                data = self.stream.read(
+                    self.chunk, exception_on_overflow=False)
                 self.frames += data
 
                 audio_array = self.bytes_to_float_array(data)
@@ -763,10 +780,11 @@ class TranscriptionClient(TranscriptionTeeClient):
     Example:
         To create a TranscriptionClient and start transcription on microphone audio:
         ```python
-        transcription_client = TranscriptionClient(host="localhost", port=9090)
+        transcription_client = TranscriptionClient(host="localhost", port=8005)
         transcription_client()
         ```
     """
+
     def __init__(
         self,
         host,
@@ -813,11 +831,14 @@ class TranscriptionClient(TranscriptionTeeClient):
         )
 
         if save_output_recording and not output_recording_filename.endswith(".wav"):
-            raise ValueError(f"Please provide a valid `output_recording_filename`: {output_recording_filename}")
+            raise ValueError(
+                f"Please provide a valid `output_recording_filename`: {output_recording_filename}")
         if not output_transcription_path.endswith(".srt"):
-            raise ValueError(f"Please provide a valid `output_transcription_path`: {output_transcription_path}. The file extension should be `.srt`.")
+            raise ValueError(
+                f"Please provide a valid `output_transcription_path`: {output_transcription_path}. The file extension should be `.srt`.")
         if not translation_srt_file_path.endswith(".srt"):
-            raise ValueError(f"Please provide a valid `translation_srt_file_path`: {translation_srt_file_path}. The file extension should be `.srt`.")
+            raise ValueError(
+                f"Please provide a valid `translation_srt_file_path`: {translation_srt_file_path}. The file extension should be `.srt`.")
         TranscriptionTeeClient.__init__(
             self,
             [self.client],

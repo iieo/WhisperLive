@@ -453,7 +453,7 @@ class TranscriptionServer:
 
     def run(self,
             host,
-            port=9090,
+            port=8005,
             backend="tensorrt",
             faster_whisper_custom_model_path=None,
             whisper_tensorrt_path=None,

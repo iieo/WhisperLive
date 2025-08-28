@@ -7,46 +7,46 @@ import argparse
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', '-p',
-                          type=int,
-                          default=9090,
-                          help="Websocket port to run the server on.")
+                        type=int,
+                        default=8005,
+                        help="Websocket port to run the server on.")
     parser.add_argument('--server', '-s',
-                          type=str,
-                          default='localhost',
-                          help='hostname or ip address of server')
+                        type=str,
+                        default='localhost',
+                        help='hostname or ip address of server')
     parser.add_argument('--files', '-f',
-                          type=str,
-                          nargs='+',
-                          help='Files to transcribe, separated by spaces. '
-                              'If not provided, will use microphone input.')
+                        type=str,
+                        nargs='+',
+                        help='Files to transcribe, separated by spaces. '
+                        'If not provided, will use microphone input.')
     parser.add_argument('--output_file', '-o',
-                          type=str,
-                          default='./output_recording.wav',
-                          help='output recording filename, only used for microphone input.')
+                        type=str,
+                        default='./output_recording.wav',
+                        help='output recording filename, only used for microphone input.')
     parser.add_argument('--model', '-m',
-                          type=str,
-                          default='small',
-                          help='Model to use for transcription, e.g., "tiny, small.en, large-v3".')
+                        type=str,
+                        default='small',
+                        help='Model to use for transcription, e.g., "tiny, small.en, large-v3".')
     parser.add_argument('--lang', '-l',
-                          type=str,
-                          default='en',
-                          help='Language code for transcription, e.g., "en" for English.')
+                        type=str,
+                        default='en',
+                        help='Language code for transcription, e.g., "en" for English.')
     parser.add_argument('--translate', '-t',
-                          action='store_true',
-                          help='Enable translation of the transcription output.')
+                        action='store_true',
+                        help='Enable translation of the transcription output.')
     parser.add_argument('--mute_audio_playback', '-a',
-                          action='store_true',
-                          help='Mute audio playback during transcription.') 
+                        action='store_true',
+                        help='Mute audio playback during transcription.')
     parser.add_argument('--save_output_recording', '-r',
-                          action='store_true',
-                          help='Save the output recording, only used for microphone input.')
+                        action='store_true',
+                        help='Save the output recording, only used for microphone input.')
     parser.add_argument('--enable_translation',
-                          action='store_true',
-                          help='Enable translation of the transcription output.')
+                        action='store_true',
+                        help='Enable translation of the transcription output.')
     parser.add_argument('--target_language', '-tl',
-                          type=str,
-                          default='fr',
-                          help='Target language for translation, e.g., "fr" for French.')
+                        type=str,
+                        default='fr',
+                        help='Target language for translation, e.g., "fr" for French.')
 
     args = parser.parse_args()
 
@@ -73,12 +73,18 @@ if __name__ == '__main__':
             args.port,
             lang=args.lang,
             translate=args.translate,
-            model=args.model,                                  # also support hf_model => `Systran/faster-whisper-small`
+            # also support hf_model => `Systran/faster-whisper-small`
+            model=args.model,
             use_vad=True,
-            save_output_recording=args.save_output_recording,  # Only used for microphone input, False by Default
-            output_recording_filename=args.output_file,        # Only used for microphone input
-            mute_audio_playback=args.mute_audio_playback,      # Only used for file input, False by Default
-            enable_translation=args.enable_translation,        # Enable translation of the transcription output
-            target_language=args.target_language,              # Target language for translation, e.g., "fr
+            # Only used for microphone input, False by Default
+            save_output_recording=args.save_output_recording,
+            # Only used for microphone input
+            output_recording_filename=args.output_file,
+            # Only used for file input, False by Default
+            mute_audio_playback=args.mute_audio_playback,
+            # Enable translation of the transcription output
+            enable_translation=args.enable_translation,
+            # Target language for translation, e.g., "fr
+            target_language=args.target_language,
         )
         client(f)

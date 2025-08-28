@@ -6,9 +6,9 @@ document.addEventListener("DOMContentLoaded", function () {
   const useServerCheckbox = document.getElementById("useServerCheckbox");
   const useVadCheckbox = document.getElementById("useVadCheckbox");
   const saveCaptionsCheckbox = document.getElementById("saveCaptionsCheckbox");
-  const languageDropdown = document.getElementById('languageDropdown');
-  const taskDropdown = document.getElementById('taskDropdown');
-  const modelSizeDropdown = document.getElementById('modelSizeDropdown');
+  const languageDropdown = document.getElementById("languageDropdown");
+  const taskDropdown = document.getElementById("taskDropdown");
+  const modelSizeDropdown = document.getElementById("modelSizeDropdown");
   let selectedLanguage = null;
   let selectedTask = taskDropdown.value;
   let selectedModelSize = modelSizeDropdown.value;
@@ -78,16 +78,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Send a message to the background script to start capturing
     let host = "localhost";
-    let port = "9090";
+    let port = "8005";
     const useCollaboraServer = useServerCheckbox.checked;
-    if (useCollaboraServer){
-      host = "transcription.kurg.org"
-      port = "7090"
+    if (useCollaboraServer) {
+      host = "transcription.kurg.org";
+      port = "7090";
     }
 
     chrome.runtime.sendMessage(
-      { 
-        action: "startCapture", 
+      {
+        action: "startCapture",
         tabId: currentTab.id,
         host: host,
         port: port,
@@ -96,7 +96,8 @@ document.addEventListener("DOMContentLoaded", function () {
         modelSize: selectedModelSize,
         useVad: useVadCheckbox.checked,
         saveCaptions: saveCaptionsCheckbox.checked,
-      }, () => {
+      },
+      () => {
         // Update capturing state in storage and toggle the buttons
         chrome.storage.local.set({ capturingState: { isCapturing: true } }, () => {
           toggleCaptureButtons(true);
@@ -114,15 +115,17 @@ document.addEventListener("DOMContentLoaded", function () {
 
     // Send a message to the background script to stop capturing
     chrome.runtime.sendMessage(
-      { 
+      {
         action: "stopCapture",
         saveCaptions: saveCaptionsCheckbox.checked,
-      }, () => {
-      // Update capturing state in storage and toggle the buttons
-      chrome.storage.local.set({ capturingState: { isCapturing: false } }, () => {
-        toggleCaptureButtons(false);
-      });
-    });
+      },
+      () => {
+        // Update capturing state in storage and toggle the buttons
+        chrome.storage.local.set({ capturingState: { isCapturing: false } }, () => {
+          toggleCaptureButtons(false);
+        });
+      }
+    );
   }
 
   // Function to get the current active tab
@@ -143,7 +146,7 @@ document.addEventListener("DOMContentLoaded", function () {
     saveCaptionsCheckbox.disabled = isCapturing;
     modelSizeDropdown.disabled = isCapturing;
     languageDropdown.disabled = isCapturing;
-    taskDropdown.disabled = isCapturing; 
+    taskDropdown.disabled = isCapturing;
     startButton.classList.toggle("disabled", isCapturing);
     stopButton.classList.toggle("disabled", !isCapturing);
   }
@@ -164,7 +167,7 @@ document.addEventListener("DOMContentLoaded", function () {
     chrome.storage.local.set({ saveCaptionsState });
   });
 
-  languageDropdown.addEventListener('change', function() {
+  languageDropdown.addEventListener("change", function () {
     if (languageDropdown.value === "") {
       selectedLanguage = null;
     } else {
@@ -173,12 +176,12 @@ document.addEventListener("DOMContentLoaded", function () {
     chrome.storage.local.set({ selectedLanguage });
   });
 
-  taskDropdown.addEventListener('change', function() {
+  taskDropdown.addEventListener("change", function () {
     selectedTask = taskDropdown.value;
     chrome.storage.local.set({ selectedTask });
   });
 
-  modelSizeDropdown.addEventListener('change', function() {
+  modelSizeDropdown.addEventListener("change", function () {
     selectedModelSize = modelSizeDropdown.value;
     chrome.storage.local.set({ selectedModelSize });
   });
@@ -186,7 +189,7 @@ document.addEventListener("DOMContentLoaded", function () {
   chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
     if (request.action === "updateSelectedLanguage") {
       const detectedLanguage = request.detectedLanguage;
-  
+
       if (detectedLanguage) {
         languageDropdown.value = detectedLanguage;
         chrome.storage.local.set({ selectedLanguage: detectedLanguage });
@@ -197,8 +200,7 @@ document.addEventListener("DOMContentLoaded", function () {
   chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
     if (request.action === "toggleCaptureButtons") {
       toggleCaptureButtons(false);
-      chrome.storage.local.set({ capturingState: { isCapturing: false } })
+      chrome.storage.local.set({ capturingState: { isCapturing: false } });
     }
   });
-  
 });

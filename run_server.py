@@ -5,7 +5,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', '-p',
                         type=int,
-                        default=9090,
+                        default=8005,
                         help="Websocket port to run the server on.")
     parser.add_argument('--backend', '-b',
                         type=str,
