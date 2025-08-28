@@ -4,25 +4,13 @@ import threading
 import time
 import queue
 import numpy as np
+from websockets.exceptions import ConnectionClosed
 
 
 class ServeClientBase(object):
     RATE = 16000
     SERVER_READY = "SERVER_READY"
     DISCONNECT = "DISCONNECT"
-
-    client_uid: str
-    """A unique identifier for the client."""
-    websocket: object
-    """The WebSocket connection for the client."""
-    send_last_n_segments: int
-    """Number of most recent segments to send to the client."""
-    no_speech_thresh: float
-    """Segments with no speech probability above this threshold will be discarded."""
-    clip_audio: bool
-    """Whether to clip audio with no valid segments."""
-    same_output_threshold: int
-    """Number of repeated outputs before considering it as a valid segment."""
 
     def __init__(
         self,
@@ -40,31 +28,27 @@ class ServeClientBase(object):
         self.no_speech_thresh = no_speech_thresh
         self.clip_audio = clip_audio
         self.same_output_threshold = same_output_threshold
-
-        self.timestamp_offset = 0.0
-        self.frames_np = None
-        self.frames_offset = 0.0
-        self.text = []
-        self.current_out = ""
-        self.prev_out = ""
-        self.exit = False
-        self.same_output_count = 0
-        self.transcript = []
-        self.end_time_for_same_output = None
         self.translation_queue = translation_queue
 
-        # threading
+        self.frames_np = None
+        self.frames_offset = 0.0
+        self.timestamp_offset = 0.0
+        self.transcript = []
+        self.text = []
+
+        self.current_out = ""
+        self.prev_out = ""
+        self.same_output_count = 0
+        self.end_time_for_same_output = None
+
+        self.exit = False
         self.lock = threading.Lock()
 
     def speech_to_text(self):
         """
-        Process an audio stream in an infinite loop, continuously transcribing the speech.
+        Main processing loop for transcribing audio.
         """
-        while True:
-            if self.exit:
-                logging.info("Exiting speech to text thread")
-                break
-
+        while not self.exit:
             if self.frames_np is None:
                 time.sleep(0.05)
                 continue
@@ -74,23 +58,26 @@ class ServeClientBase(object):
 
             input_bytes, duration = self.get_audio_chunk_for_processing()
             if duration < 1.0:
-                time.sleep(0.1)     # wait for audio chunks to arrive
+                time.sleep(0.1)
                 continue
+
             try:
                 input_sample = input_bytes.copy()
                 result = self.transcribe_audio(input_sample)
 
-                if result is None:
-                    self.timestamp_offset += duration
-                    # wait for voice activity, result is None when no voice activity
-                    time.sleep(0.25)
+                # If result is empty (no speech), advance timestamp and continue
+                if not result:
+                    with self.lock:
+                        self.timestamp_offset += duration
+                    time.sleep(0.1)
                     continue
+
                 self.handle_transcription_output(result, duration)
 
             except Exception as e:
                 logging.error(
                     f"[ERROR]: Failed to transcribe audio chunk: {e}")
-                time.sleep(0.01)
+                break
 
     def transcribe_audio(self, input_sample):
         raise NotImplementedError
@@ -99,25 +86,13 @@ class ServeClientBase(object):
         raise NotImplementedError
 
     def format_segment(self, start, end, text, completed=False):
-        """
-        Formats a transcription segment.
-        """
-        return {
-            'start': "{:.3f}".format(start),
-            'end': "{:.3f}".format(end),
-            'text': text,
-            'completed': completed
-        }
+        return {'start': f"{start:.3f}", 'end': f"{end:.3f}", 'text': text, 'completed': completed}
 
     def add_frames(self, frame_np):
-        """
-        Add audio frames (as a numpy array) to the internal buffer.
-        This method is thread-safe.
-        """
         with self.lock:
-            if self.frames_np is not None and self.frames_np.shape[0] > 45*self.RATE:
+            if self.frames_np is not None and self.frames_np.shape[0] > 45 * self.RATE:
                 self.frames_offset += 30.0
-                self.frames_np = self.frames_np[int(30*self.RATE):]
+                self.frames_np = self.frames_np[int(30 * self.RATE):]
                 if self.timestamp_offset < self.frames_offset:
                     self.timestamp_offset = self.frames_offset
 
@@ -128,68 +103,43 @@ class ServeClientBase(object):
                     (self.frames_np, frame_np), axis=0)
 
     def clip_audio_if_no_valid_segment(self):
-        """
-        Clip audio if the current chunk exceeds a duration threshold without a valid segment.
-        """
         with self.lock:
-            if self.frames_np[int((self.timestamp_offset - self.frames_offset)*self.RATE):].shape[0] > 25 * self.RATE:
+            if self.frames_np[int((self.timestamp_offset - self.frames_offset) * self.RATE):].shape[0] > 25 * self.RATE:
                 duration = self.frames_np.shape[0] / self.RATE
                 self.timestamp_offset = self.frames_offset + duration - 5
 
     def get_audio_chunk_for_processing(self):
-        """
-        Retrieves the next chunk of audio data for processing.
-        """
         with self.lock:
-            samples_take = max(0, (self.timestamp_offset -
-                               self.frames_offset) * self.RATE)
-            input_bytes = self.frames_np[int(samples_take):].copy()
+            samples_take = max(
+                0, int((self.timestamp_offset - self.frames_offset) * self.RATE))
+            input_bytes = self.frames_np[samples_take:].copy()
         duration = input_bytes.shape[0] / self.RATE
         return input_bytes, duration
 
     def prepare_segments(self, last_segment=None):
-        """
-        Prepares the segments of transcribed text to be sent to the client.
-        """
-        segments = []
-        if len(self.transcript) >= self.send_last_n_segments:
-            segments = self.transcript[-self.send_last_n_segments:].copy()
-        else:
-            segments = self.transcript.copy()
-        if last_segment is not None:
-            segments = segments + [last_segment]
+        segments = self.transcript[-self.send_last_n_segments:].copy() if len(
+            self.transcript) >= self.send_last_n_segments else self.transcript.copy()
+        if last_segment:
+            segments.append(last_segment)
         return segments
 
     def send_transcription_to_client(self, segments):
-        """
-        Sends the specified transcription segments to the client over the websocket connection.
-        """
         try:
-            self.websocket.send(
-                json.dumps({
-                    "uid": self.client_uid,
-                    "segments": segments,
-                })
-            )
+            self.websocket.send(json.dumps(
+                {"uid": self.client_uid, "segments": segments}))
+        except ConnectionClosed:
+            logging.info("Client connection closed, unable to send segments.")
         except Exception as e:
             logging.error(f"[ERROR]: Sending data to client: {e}")
 
     def disconnect(self):
-        """
-        Notify the client of disconnection.
-        """
         try:
-            self.websocket.send(json.dumps({
-                "uid": self.client_uid,
-                "message": self.DISCONNECT
-            }))
+            self.websocket.send(json.dumps(
+                {"uid": self.client_uid, "message": self.DISCONNECT}))
         except ConnectionClosed:
             logging.info("Client already disconnected.")
 
     def cleanup(self):
-        """
-        Perform cleanup tasks.
-        """
         logging.info(f"Cleaning up resources for client {self.client_uid}")
         self.exit = True
 
@@ -203,9 +153,6 @@ class ServeClientBase(object):
         return getattr(segment, "end", 0)
 
     def update_segments(self, segments, duration):
-        """
-        Processes the segments from the ASR model and updates the transcript.
-        """
         offset = None
         self.current_out = ''
         last_segment = None
@@ -267,14 +214,9 @@ class ServeClientBase(object):
                         completed=True
                     )
                     self.transcript.append(completed_segment)
-
                     if self.translation_queue:
-                        try:
-                            self.translation_queue.put(
-                                completed_segment.copy(), timeout=0.1)
-                        except queue.Full:
-                            logging.warning(
-                                "Translation queue is full, skipping segment")
+                        self.translation_queue.put(
+                            completed_segment.copy(), block=False)
 
             self.current_out = ''
             offset = min(duration, self.end_time_for_same_output)

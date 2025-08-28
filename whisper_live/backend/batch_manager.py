@@ -2,7 +2,7 @@ import threading
 import time
 import queue
 import logging
-from typing import List, Tuple
+from typing import List, Any, Tuple
 import numpy as np
 
 
