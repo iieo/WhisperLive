@@ -37,4 +37,5 @@ dependencies = [
     "uvicorn",
     "websocket-client",
     "websockets",
+    "asyncio>=4.0.0",
 ]

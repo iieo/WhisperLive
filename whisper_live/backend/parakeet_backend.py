@@ -146,6 +146,26 @@ class ServeClientParakeet(ServeClientBase):
             logging.error(
                 f"[Parakeet] Failed to send SERVER_READY message: {e}")
 
+    def add_frames(self, frame_bytes):
+        """
+        Handles incoming audio frames from the client.
+
+        This method overrides the base class's `add_frames` to correctly
+        interpret the incoming audio chunks as raw float32 PCM data. The base
+        class assumes 16-bit integer PCM, which would lead to misinterpretation
+        of float32 data.
+
+        Args:
+            frame_bytes: A byte string containing the raw audio data.
+        """
+        # The base class accumulates bytes in `self.frames`. We do the same
+        # to ensure compatibility with buffer clipping logic in the base class.
+        self.frames += frame_bytes
+
+        # Interpret the accumulated bytes as a numpy array of float32 values.
+        # This assumes the client is sending 32-bit float PCM.
+        self.frames_np = np.frombuffer(self.frames, dtype=np.float32)
+
     def create_model(self, device):
         """Load Parakeet model"""
         logging.info(f"[Parakeet] Loading model: {self.model_name}")

@@ -5,20 +5,19 @@ import queue
 import json
 import functools
 import logging
-from enum import Enum
 from typing import List, Optional
 
 import numpy as np
 from websockets.sync.server import serve
 from websockets.exceptions import ConnectionClosed
-from whisper_live.vad import VoiceActivityDetector
 from whisper_live.backend.base import ServeClientBase
+from whisper_live.backend.parakeet_backend import ServeClientParakeet
 
 logging.basicConfig(level=logging.INFO)
 
 
 class ClientManager:
-    def __init__(self, max_clients=4, max_connection_time=600):
+    def __init__(self, max_clients=100, max_connection_time=600):
         """
         Initializes the ClientManager with specified limits on client connections and connection durations.
 
@@ -123,39 +122,11 @@ class ClientManager:
         return False
 
 
-class BackendType(Enum):
-    FASTER_WHISPER = "faster_whisper"
-    TENSORRT = "tensorrt"
-    OPENVINO = "openvino"
-    PARAKEET = "parakeet"
-
-    @staticmethod
-    def valid_types() -> List[str]:
-        return [backend_type.value for backend_type in BackendType]
-
-    @staticmethod
-    def is_valid(backend: str) -> bool:
-        return backend in BackendType.valid_types()
-
-    def is_faster_whisper(self) -> bool:
-        return self == BackendType.FASTER_WHISPER
-
-    def is_tensorrt(self) -> bool:
-        return self == BackendType.TENSORRT
-
-    def is_openvino(self) -> bool:
-        return self == BackendType.OPENVINO
-
-    def is_parakeet(self) -> bool:
-        return self == BackendType.PARAKEET
-
-
 class TranscriptionServer:
     RATE = 16000
 
     def __init__(self):
         self.client_manager = None
-        self.no_voice_activity_chunks = 0
         self.use_vad = True
         self.single_model = False
         self.preloaded_parakeet_model = None
@@ -165,37 +136,30 @@ class TranscriptionServer:
         try:
             import torch
             import nemo.collections.asr as nemo_asr
-            
+
             logging.info("[Server] Pre-loading Parakeet model...")
-            print("[Server] Pre-loading Parakeet model...")
-            
+
             # Load Parakeet model from NVIDIA NGC
             model = nemo_asr.models.ASRModel.from_pretrained(
                 model_name="nvidia/parakeet-tdt-0.6b-v3"
             )
-            
+
             # Move to GPU if available
             if torch.cuda.is_available():
                 logging.info("[Server] Moving Parakeet model to CUDA...")
-                print("[Server] Moving Parakeet model to CUDA...")
                 model = model.cuda()
-            
+
             # Set to evaluation mode
             model.eval()
-            
+
             self.preloaded_parakeet_model = model
             logging.info("[Server] Parakeet model pre-loaded successfully")
-            print("[Server] Parakeet model pre-loaded successfully")
-            
+
         except Exception as e:
             logging.error(f"[Server] Failed to pre-load Parakeet model: {e}")
-            print(f"[Server] Failed to pre-load Parakeet model: {e}")
             self.preloaded_parakeet_model = None
 
-    def initialize_client(
-        self, websocket, options, faster_whisper_custom_model_path,
-        whisper_tensorrt_path, trt_multilingual, trt_py_session=False,
-    ):
+    def initialize_client(self, websocket, options):
         client: Optional[ServeClientBase] = None
 
         # Check if client wants translation
@@ -228,146 +192,41 @@ class TranscriptionServer:
             logging.info(
                 f"Translation enabled for client {options['uid']} with target language: {target_language}")
 
-# Handle Parakeet backend
-        print(self.backend)
-        if self.backend.is_parakeet():
-            try:
-                from whisper_live.backend.parakeet_backend import ServeClientParakeet
-
-                # Use custom model path if provided, otherwise use default
-                model_name = "nvidia/parakeet-tdt-0.6b-v3"
-                print("serveparakeet")
-                print("language")
-                print(options.get("language"))
-                client = ServeClientParakeet(
-                    websocket,
-                    language=options.get("language"),
-                    task=options.get("task", "transcribe"),
-                    client_uid=options["uid"],
-                    model=model_name,
-                    initial_prompt=options.get("initial_prompt"),
-                    vad_parameters=options.get("vad_parameters"),
-                    use_vad=self.use_vad,
-                    single_model=self.single_model,
-                    send_last_n_segments=options.get(
-                        "send_last_n_segments", 10),
-                    no_speech_thresh=options.get("no_speech_thresh", 0.45),
-                    clip_audio=options.get("clip_audio", False),
-                    same_output_threshold=options.get(
-                        "same_output_threshold", 10),
-                    cache_path=self.cache_path,
-                    translation_queue=translation_queue,
-                    preloaded_model=self.preloaded_parakeet_model
-                )
-                logging.info("Running Parakeet backend.")
-            except Exception as e:
-                logging.error(f"Parakeet not supported: {e}")
-                self.backend = BackendType.FASTER_WHISPER
-                try:
-                    websocket.send(json.dumps({
-                        "uid": options["uid"],
-                        "status": "WARNING",
-                        "message": f"Parakeet not supported on Server. Reverting to 'faster_whisper': {str(e)}"
-                    }))
-                except:
-                    pass
-
-        if self.backend.is_tensorrt():
-            try:
-                from whisper_live.backend.trt_backend import ServeClientTensorRT
-                client = ServeClientTensorRT(
-                    websocket,
-                    multilingual=trt_multilingual,
-                    language=options["language"],
-                    task=options["task"],
-                    client_uid=options["uid"],
-                    model=whisper_tensorrt_path,
-                    single_model=self.single_model,
-                    use_py_session=trt_py_session,
-                    send_last_n_segments=options.get(
-                        "send_last_n_segments", 10),
-                    no_speech_thresh=options.get("no_speech_thresh", 0.45),
-                    clip_audio=options.get("clip_audio", False),
-                    same_output_threshold=options.get(
-                        "same_output_threshold", 10),
-                )
-                logging.info("Running TensorRT backend.")
-            except Exception as e:
-                logging.error(f"TensorRT-LLM not supported: {e}")
-                self.client_uid = options["uid"]
-                websocket.send(json.dumps({
-                    "uid": self.client_uid,
-                    "status": "WARNING",
-                    "message": "TensorRT-LLM not supported on Server yet. "
-                               "Reverting to available backend: 'faster_whisper'"
-                }))
-                self.backend = BackendType.FASTER_WHISPER
-
-        if self.backend.is_openvino():
-            try:
-                from whisper_live.backend.openvino_backend import ServeClientOpenVINO
-                client = ServeClientOpenVINO(
-                    websocket,
-                    language=options["language"],
-                    task=options["task"],
-                    client_uid=options["uid"],
-                    model=options["model"],
-                    single_model=self.single_model,
-                    send_last_n_segments=options.get(
-                        "send_last_n_segments", 10),
-                    no_speech_thresh=options.get("no_speech_thresh", 0.45),
-                    clip_audio=options.get("clip_audio", False),
-                    same_output_threshold=options.get(
-                        "same_output_threshold", 10),
-                )
-                logging.info("Running OpenVINO backend.")
-            except Exception as e:
-                logging.error(f"OpenVINO not supported: {e}")
-                self.backend = BackendType.FASTER_WHISPER
-                self.client_uid = options["uid"]
-                websocket.send(json.dumps({
-                    "uid": self.client_uid,
-                    "status": "WARNING",
-                    "message": "OpenVINO not supported on Server yet. "
-                    "Reverting to available backend: 'faster_whisper'"
-                }))
-
+        # Handle Parakeet backend
         try:
-            if self.backend.is_faster_whisper():
-                from whisper_live.backend.faster_whisper_backend import ServeClientFasterWhisper
-                # model is of the form namespace/repo_name and not a filesystem path
-                if faster_whisper_custom_model_path is not None:
-                    logging.info(
-                        f"Using custom model {faster_whisper_custom_model_path}")
-                    options["model"] = faster_whisper_custom_model_path
-                client = ServeClientFasterWhisper(
-                    websocket,
-                    language=options["language"],
-                    task=options["task"],
-                    client_uid=options["uid"],
-                    model=options["model"],
-                    initial_prompt=options.get("initial_prompt"),
-                    vad_parameters=options.get("vad_parameters"),
-                    use_vad=self.use_vad,
-                    single_model=self.single_model,
-                    send_last_n_segments=options.get(
-                        "send_last_n_segments", 10),
-                    no_speech_thresh=options.get("no_speech_thresh", 0.45),
-                    clip_audio=options.get("clip_audio", False),
-                    same_output_threshold=options.get(
-                        "same_output_threshold", 10),
-                    cache_path=self.cache_path,
-                    translation_queue=translation_queue
-                )
-
-                logging.info("Running faster_whisper backend.")
+            model_name = "nvidia/parakeet-tdt-0.6b-v3"
+            client = ServeClientParakeet(
+                websocket,
+                language=options.get("language"),
+                task=options.get("task", "transcribe"),
+                client_uid=options["uid"],
+                model=model_name,
+                initial_prompt=options.get("initial_prompt"),
+                vad_parameters=options.get("vad_parameters"),
+                use_vad=self.use_vad,
+                single_model=self.single_model,
+                send_last_n_segments=options.get(
+                    "send_last_n_segments", 10),
+                no_speech_thresh=options.get("no_speech_thresh", 0.45),
+                clip_audio=options.get("clip_audio", False),
+                same_output_threshold=options.get(
+                    "same_output_threshold", 10),
+                cache_path=self.cache_path,
+                translation_queue=translation_queue,
+                preloaded_model=self.preloaded_parakeet_model
+            )
+            logging.info("Running Parakeet backend.")
         except Exception as e:
-            logging.error(e)
+            logging.error(f"Error initializing Parakeet backend: {e}")
+            try:
+                websocket.send(json.dumps({
+                    "uid": options["uid"],
+                    "status": "ERROR",
+                    "message": f"Parakeet backend failed to initialize: {str(e)}"
+                }))
+            except ConnectionClosed:
+                pass  # Client may have already disconnected
             return
-
-        if client is None:
-            raise ValueError(
-                f"Backend type {self.backend.value} not recognised or not handled.")
 
         if translation_client:
             client.translation_client = translation_client
@@ -383,35 +242,31 @@ class TranscriptionServer:
             websocket: The websocket to receive audio from.
 
         Returns:
-            A numpy array containing the audio.
+            A numpy array containing the audio or False if the connection is closing.
         """
         frame_data = websocket.recv()
         if frame_data == b"END_OF_AUDIO":
             return False
         return np.frombuffer(frame_data, dtype=np.float32)
 
-    def handle_new_connection(self, websocket, faster_whisper_custom_model_path,
-                              whisper_tensorrt_path, trt_multilingual, trt_py_session=False):
+    def handle_new_connection(self, websocket):
         try:
             logging.info("New client connected")
             options = websocket.recv()
             options = json.loads(options)
 
-            self.use_vad = options.get('use_vad')
+            self.use_vad = options.get('use_vad', True)
             if self.client_manager.is_server_full(websocket, options):
                 websocket.close()
                 return False  # Indicates that the connection should not continue
 
-            if self.backend.is_tensorrt():
-                self.vad_detector = VoiceActivityDetector(frame_rate=self.RATE)
-            self.initialize_client(websocket, options, faster_whisper_custom_model_path,
-                                   whisper_tensorrt_path, trt_multilingual, trt_py_session=trt_py_session)
+            self.initialize_client(websocket, options)
             return True
         except json.JSONDecodeError:
             logging.error("Failed to decode JSON from client")
             return False
         except ConnectionClosed:
-            logging.info("Connection closed by client")
+            logging.info("Connection closed by client during initialization")
             return False
         except Exception as e:
             logging.error(
@@ -422,35 +277,17 @@ class TranscriptionServer:
         frame_np = self.get_audio_from_websocket(websocket)
         client = self.client_manager.get_client(websocket)
         if frame_np is False:
-            if self.backend.is_tensorrt():
-                client.set_eos(True)
             return False
-
-        if self.backend.is_tensorrt():
-            voice_active = self.voice_activity(websocket, frame_np)
-            if voice_active:
-                self.no_voice_activity_chunks = 0
-                client.set_eos(False)
-            if self.use_vad and not voice_active:
-                return True
 
         client.add_frames(frame_np)
         return True
 
-    def recv_audio(self,
-                   websocket,
-                   backend: BackendType = BackendType.FASTER_WHISPER,
-                   faster_whisper_custom_model_path=None,
-                   whisper_tensorrt_path=None,
-                   trt_multilingual=False,
-                   trt_py_session=False):
+    def recv_audio(self, websocket):
         """
         Receive audio chunks from a client in an infinite loop.
 
         Continuously receives audio frames from a connected client
-        over a WebSocket connection. It processes the audio frames using a
-        voice activity detection (VAD) model to determine if they contain speech
-        or not. If the audio frame contains speech, it is added to the client's
+        over a WebSocket connection. It adds the audio frames to the client's
         audio data for ASR.
         If the maximum number of clients is reached, the method sends a
         "WAIT" status to the client, indicating that they should wait
@@ -460,17 +297,11 @@ class TranscriptionServer:
 
         Args:
             websocket (WebSocket): The WebSocket connection for the client.
-            backend (str): The backend to run the server with.
-            faster_whisper_custom_model_path (str): path to custom faster whisper model.
-            whisper_tensorrt_path (str): Required for tensorrt backend.
-            trt_multilingual(bool): Only used for tensorrt, True if multilingual model.
 
         Raises:
             Exception: If there is an error during the audio frame processing.
         """
-        self.backend = backend
-        if not self.handle_new_connection(websocket, faster_whisper_custom_model_path,
-                                          whisper_tensorrt_path, trt_multilingual, trt_py_session=trt_py_session):
+        if not self.handle_new_connection(websocket):
             return
 
         try:
@@ -490,11 +321,6 @@ class TranscriptionServer:
     def run(self,
             host,
             port=8005,
-            backend="tensorrt",
-            faster_whisper_custom_model_path=None,
-            whisper_tensorrt_path=None,
-            trt_multilingual=False,
-            trt_py_session=False,
             single_model=False,
             max_clients=4,
             max_connection_time=600,
@@ -505,74 +331,27 @@ class TranscriptionServer:
         Args:
             host (str): The host address to bind the server.
             port (int): The port number to bind the server.
+            single_model (bool): If True, pre-loads the Parakeet model on startup.
+            max_clients (int): The maximum number of simultaneous client connections allowed.
+            max_connection_time (int): The maximum duration (in seconds) a client can stay connected.
+            cache_path (str): Path to cache directory.
         """
         self.cache_path = cache_path
         self.client_manager = ClientManager(max_clients, max_connection_time)
-        if faster_whisper_custom_model_path is not None and not os.path.exists(faster_whisper_custom_model_path):
-            raise ValueError(
-                f"Custom faster_whisper model '{faster_whisper_custom_model_path}' is not a valid path.")
-        if whisper_tensorrt_path is not None and not os.path.exists(whisper_tensorrt_path):
-            raise ValueError(
-                f"TensorRT model '{whisper_tensorrt_path}' is not a valid path.")
+
+        # Pre-load parakeet model if single_model mode is enabled
         if single_model:
-            if faster_whisper_custom_model_path or whisper_tensorrt_path:
-                logging.info(
-                    "Custom model option was provided. Switching to single model mode.")
-                self.single_model = True
-                # TODO: load model initially
-            else:
-                logging.info(
-                    "Single model mode currently only works with custom models.")
-        
-        # Pre-load parakeet model if single_model mode is enabled and parakeet backend is used
-        if single_model and backend == "parakeet":
+            self.single_model = True
             self._preload_parakeet_model()
-        if not BackendType.is_valid(backend):
-            raise ValueError(
-                f"{backend} is not a valid backend type. Choose backend from {BackendType.valid_types()}")
+
         with serve(
-            functools.partial(
-                self.recv_audio,
-                backend=BackendType(backend),
-                faster_whisper_custom_model_path=faster_whisper_custom_model_path,
-                whisper_tensorrt_path=whisper_tensorrt_path,
-                trt_multilingual=trt_multilingual,
-                trt_py_session=trt_py_session,
-            ),
+            self.recv_audio,
             host,
             port
         ) as server:
+            logging.info(
+                f"Parakeet Transcription Server is running on {host}:{port}")
             server.serve_forever()
-
-    def voice_activity(self, websocket, frame_np):
-        """
-        Evaluates the voice activity in a given audio frame and manages the state of voice activity detection.
-
-        This method uses the configured voice activity detection (VAD) model to assess whether the given audio frame
-        contains speech. If the VAD model detects no voice activity for more than three consecutive frames,
-        it sets an end-of-speech (EOS) flag for the associated client. This method aims to efficiently manage
-        speech detection to improve subsequent processing steps.
-
-        Args:
-            websocket: The websocket associated with the current client. Used to retrieve the client object
-                    from the client manager for state management.
-            frame_np (numpy.ndarray): The audio frame to be analyzed. This should be a NumPy array containing
-                                    the audio data for the current frame.
-
-        Returns:
-            bool: True if voice activity is detected in the current frame, False otherwise. When returning False
-                after detecting no voice activity for more than three consecutive frames, it also triggers the
-                end-of-speech (EOS) flag for the client.
-        """
-        if not self.vad_detector(frame_np):
-            self.no_voice_activity_chunks += 1
-            if self.no_voice_activity_chunks > 3:
-                client = self.client_manager.get_client(websocket)
-                if not client.eos:
-                    client.set_eos(True)
-                time.sleep(0.1)    # Sleep 100m; wait some voice activity.
-            return False
-        return True
 
     def cleanup(self, websocket):
         """
