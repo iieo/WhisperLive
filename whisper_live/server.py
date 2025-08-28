@@ -194,17 +194,14 @@ class TranscriptionServer:
 
         # Handle Parakeet backend
         try:
-            model_name = "nvidia/parakeet-tdt-0.6b-v3"
             client = ServeClientParakeet(
                 websocket,
                 language=options.get("language"),
                 task=options.get("task", "transcribe"),
                 client_uid=options["uid"],
-                model=model_name,
                 initial_prompt=options.get("initial_prompt"),
                 vad_parameters=options.get("vad_parameters"),
                 use_vad=self.use_vad,
-                single_model=self.single_model,
                 send_last_n_segments=options.get(
                     "send_last_n_segments", 10),
                 no_speech_thresh=options.get("no_speech_thresh", 0.45),

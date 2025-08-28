@@ -118,9 +118,6 @@ Examples:
         server.run(
             host=args.host,
             port=args.port,
-            backend=args.backend,
-            faster_whisper_custom_model_path=faster_whisper_model,
-            whisper_tensorrt_path=args.tensorrt_model_path,
             single_model=args.single_model,
             max_clients=args.max_clients,
             max_connection_time=args.max_connection_time,

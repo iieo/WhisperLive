@@ -2,13 +2,10 @@ import os
 import json
 import logging
 import threading
-import time
-import traceback
 import tempfile
 import numpy as np
 import torch
 import soundfile as sf
-import nemo.collections.asr as nemo_asr
 
 from whisper_live.backend.base import ServeClientBase
 

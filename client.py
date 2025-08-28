@@ -2,8 +2,8 @@ from whisper_live.client import TranscriptionClient
 
 # Client initialisieren
 client = TranscriptionClient(
-    "https://stt.iieo.de",  # Server-Adresse
-    80,         # Server-Port
+    "localhost",  # Server-Adresse
+    8005,         # Server-Port
     lang="de",    # Sprache (nur bei multilingualen Modellen)
     translate=False,  # Auf True setzen für Übersetzung ins Englische
     model="small",    # Whisper-Modellgröße
