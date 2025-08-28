@@ -30,7 +30,7 @@ if __name__ == '__main__':
     parser.add_argument('--lang', '-l',
                         type=str,
                         default='en',
-                        help='Language code for transcription, e.g., "en" for English.')
+                        help='Language code for transcription, e.g., "de" for English.')
     parser.add_argument('--translate', '-t',
                         action='store_true',
                         help='Enable translation of the transcription output.')
@@ -46,7 +46,7 @@ if __name__ == '__main__':
     parser.add_argument('--target_language', '-tl',
                         type=str,
                         default='fr',
-                        help='Target language for translation, e.g., "fr" for French.')
+                        help='Target language for translation, e.g., "de" for French.')
 
     args = parser.parse_args()
 

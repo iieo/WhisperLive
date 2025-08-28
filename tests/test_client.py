@@ -23,7 +23,7 @@ class BaseTestCase(unittest.TestCase):
         self.mock_ws_app.send = MagicMock()
 
         self.client = TranscriptionClient(
-            host='localhost', port=8005, lang="en").client
+            host='localhost', port=8005, lang="de").client
 
         self.mock_pyaudio = mock_pyaudio
         self.mock_websocket = mock_websocket
@@ -56,7 +56,7 @@ class TestClientCallbacks(BaseTestCase):
             "clip_audio": False,
             "same_output_threshold": 10,
             "enable_translation": False,
-            "target_language": "fr",
+            "target_language": "de",
         })
         self.client.on_open(self.mock_ws_app)
         self.mock_ws_app.send.assert_called_with(expected_message)

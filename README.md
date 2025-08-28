@@ -135,7 +135,7 @@ from whisper_live.client import TranscriptionClient
 client = TranscriptionClient(
   "localhost",
   8005,
-  lang="en",
+  lang="de",
   translate=False,
   model="small",                                      # also support hf_model => `Systran/faster-whisper-small`
   use_vad=False,
@@ -147,7 +147,7 @@ client = TranscriptionClient(
 )
 ```
 
-It connects to the server running on localhost at port 8005. Using a multilingual model, language for the transcription will be automatically detected. You can also use the language option to specify the target language for the transcription, in this case, English ("en"). The translate option should be set to `True` if we want to translate from the source language to English and `False` if we want to transcribe in the source language.
+It connects to the server running on localhost at port 8005. Using a multilingual model, language for the transcription will be automatically detected. You can also use the language option to specify the target language for the transcription, in this case, English ("de"). The translate option should be set to `True` if we want to translate from the source language to English and `False` if we want to transcribe in the source language.
 
 - Transcribe an audio file:
 

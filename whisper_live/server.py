@@ -174,7 +174,7 @@ class TranscriptionServer:
         translation_thread = None
 
         if enable_translation:
-            target_language = options.get("target_language", "fr")
+            target_language = options.get("target_language", "de")
             translation_queue = queue.Queue()
             from whisper_live.backend.translation_backend import ServeClientTranslation
             translation_client = ServeClientTranslation(
@@ -204,6 +204,8 @@ class TranscriptionServer:
                 # Use custom model path if provided, otherwise use default
                 model_name = "nvidia/parakeet-tdt-0.6b-v3"
                 print("serveparakeet")
+                print("language")
+                print(options.get("language"))
                 client = ServeClientParakeet(
                     websocket,
                     language=options.get("language"),

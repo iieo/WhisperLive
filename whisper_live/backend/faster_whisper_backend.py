@@ -73,7 +73,8 @@ class ServeClientFasterWhisper(ServeClientBase):
         ]
 
         self.model_size_or_path = model
-        self.language = "en" if self.model_size_or_path.endswith("en") else language
+        self.language = "de" if self.model_size_or_path.endswith(
+            "de") else language
         self.task = task
         self.initial_prompt = initial_prompt
         self.vad_parameters = vad_parameters or {"onset": 0.5}
@@ -87,8 +88,9 @@ class ServeClientFasterWhisper(ServeClientBase):
 
         if self.model_size_or_path is None:
             return
-        logging.info(f"Using Device={device} with precision {self.compute_type}")
-    
+        logging.info(
+            f"Using Device={device} with precision {self.compute_type}")
+
         try:
             if single_model:
                 if ServeClientFasterWhisper.SINGLE_MODEL is None:
@@ -138,22 +140,25 @@ class ServeClientFasterWhisper(ServeClientBase):
                 model_to_load = model_ref
             else:
                 local_snapshot = snapshot_download(
-                    repo_id = model_ref,
-                    repo_type = "model",
+                    repo_id=model_ref,
+                    repo_type="model",
                 )
                 if ctranslate2.contains_model(local_snapshot):
                     model_to_load = local_snapshot
                 else:
-                    cache_root = os.path.expanduser(os.path.join(self.cache_path, "whisper-ct2-models/"))
+                    cache_root = os.path.expanduser(os.path.join(
+                        self.cache_path, "whisper-ct2-models/"))
                     os.makedirs(cache_root, exist_ok=True)
                     safe_name = model_ref.replace("/", "--")
                     ct2_dir = os.path.join(cache_root, safe_name)
 
                     if not ctranslate2.contains_model(ct2_dir):
-                        logging.info(f"Converting '{model_ref}' to CTranslate2 @ {ct2_dir}")
+                        logging.info(
+                            f"Converting '{model_ref}' to CTranslate2 @ {ct2_dir}")
                         ct2_converter = ctranslate2.converters.TransformersConverter(
-                            local_snapshot, 
-                            copy_files=["tokenizer.json", "preprocessor_config.json"]
+                            local_snapshot,
+                            copy_files=["tokenizer.json",
+                                        "preprocessor_config.json"]
                         )
                         ct2_converter.convert(
                             output_dir=ct2_dir,
@@ -182,7 +187,8 @@ class ServeClientFasterWhisper(ServeClientBase):
         """
         if info.language_probability > 0.5:
             self.language = info.language
-            logging.info(f"Detected language {self.language} with probability {info.language_probability}")
+            logging.info(
+                f"Detected language {self.language} with probability {info.language_probability}")
             self.websocket.send(json.dumps(
                 {"uid": self.client_uid, "language": self.language, "language_prob": info.language_probability}))
 

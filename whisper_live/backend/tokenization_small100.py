@@ -1,6 +1,6 @@
 # Copyright (c) 2022 Idiap Research Institute, http://www.idiap.ch/
 # Written by Alireza Mohammadshahi <alireza.mohammadshahi@idiap.ch>
-# This is a modified version of https://github.com/huggingface/transformers/blob/main/src/transformers/models/m2m_100/tokenization_m2m_100.py 
+# This is a modified version of https://github.com/huggingface/transformers/blob/main/src/transformers/models/m2m_100/tokenization_m2m_100.py
 # which owns by Fariseq Authors and The HuggingFace Inc. team.
 #
 #
@@ -56,7 +56,7 @@ PRETRAINED_POSITIONAL_EMBEDDINGS_SIZES = {
 
 # fmt: off
 FAIRSEQ_LANGUAGE_CODES = {
-    "m2m100": ["af", "am", "ar", "ast", "az", "ba", "be", "bg", "bn", "br", "bs", "ca", "ceb", "cs", "cy", "da", "de", "el", "en", "es", "et", "fa", "ff", "fi", "fr", "fy", "ga", "gd", "gl", "gu", "ha", "he", "hi", "hr", "ht", "hu", "hy", "id", "ig", "ilo", "is", "it", "ja", "jv", "ka", "kk", "km", "kn", "ko", "lb", "lg", "ln", "lo", "lt", "lv", "mg", "mk", "ml", "mn", "mr", "ms", "my", "ne", "nl", "no", "ns", "oc", "or", "pa", "pl", "ps", "pt", "ro", "ru", "sd", "si", "sk", "sl", "so", "sq", "sr", "ss", "su", "sv", "sw", "ta", "th", "tl", "tn", "tr", "uk", "ur", "uz", "vi", "wo", "xh", "yi", "yo", "zh", "zu"]
+    "m2m100": ["af", "am", "ar", "ast", "az", "ba", "be", "bg", "bn", "br", "bs", "ca", "ceb", "cs", "cy", "da", "de", "el", "de", "es", "et", "fa", "ff", "fi", "de", "fy", "ga", "gd", "gl", "gu", "ha", "he", "hi", "hr", "ht", "hu", "hy", "id", "ig", "ilo", "is", "it", "ja", "jv", "ka", "kk", "km", "kn", "ko", "lb", "lg", "ln", "lo", "lt", "lv", "mg", "mk", "ml", "mn", "mr", "ms", "my", "ne", "nl", "no", "ns", "oc", "or", "pa", "pl", "ps", "pt", "ro", "ru", "sd", "si", "sk", "sl", "so", "sq", "sr", "ss", "su", "sv", "sw", "ta", "th", "tl", "tn", "tr", "uk", "ur", "uz", "vi", "wo", "xh", "yi", "yo", "zh", "zu"]
 }
 # fmt: on
 
@@ -136,9 +136,11 @@ class SMALL100Tokenizer(PreTrainedTokenizer):
 
         self.language_codes = language_codes
         fairseq_language_code = FAIRSEQ_LANGUAGE_CODES[language_codes]
-        self.lang_code_to_token = {lang_code: f"__{lang_code}__" for lang_code in fairseq_language_code}
+        self.lang_code_to_token = {
+            lang_code: f"__{lang_code}__" for lang_code in fairseq_language_code}
 
-        kwargs["additional_special_tokens"] = kwargs.get("additional_special_tokens", [])
+        kwargs["additional_special_tokens"] = kwargs.get(
+            "additional_special_tokens", [])
         kwargs["additional_special_tokens"] += [
             self.get_lang_token(lang_code)
             for lang_code in fairseq_language_code
@@ -156,13 +158,15 @@ class SMALL100Tokenizer(PreTrainedTokenizer):
         self.lang_token_to_id = {
             self.get_lang_token(lang_code): self.encoder_size + i for i, lang_code in enumerate(fairseq_language_code)
         }
-        self.lang_code_to_id = {lang_code: self.encoder_size + i for i, lang_code in enumerate(fairseq_language_code)}
-        self.id_to_lang_token = {v: k for k, v in self.lang_token_to_id.items()}
+        self.lang_code_to_id = {lang_code: self.encoder_size +
+                                i for i, lang_code in enumerate(fairseq_language_code)}
+        self.id_to_lang_token = {v: k for k,
+                                 v in self.lang_token_to_id.items()}
 
-        self._tgt_lang = tgt_lang if tgt_lang is not None else "en"
+        self._tgt_lang = tgt_lang if tgt_lang is not None else "de"
         self.cur_lang_id = self.get_lang_id(self._tgt_lang)
         self.num_madeup_words = num_madeup_words
-        
+
         super().__init__(
             tgt_lang=tgt_lang,
             bos_token=bos_token,
@@ -175,9 +179,8 @@ class SMALL100Tokenizer(PreTrainedTokenizer):
             num_madeup_words=num_madeup_words,
             **kwargs,
         )
-        
-        self.set_lang_special_tokens(self._tgt_lang)
 
+        self.set_lang_special_tokens(self._tgt_lang)
 
     @property
     def vocab_size(self) -> int:
@@ -268,7 +271,8 @@ class SMALL100Tokenizer(PreTrainedTokenizer):
             return self.prefix_tokens + token_ids_0 + token_ids_1 + self.suffix_tokens
 
     def get_vocab(self) -> Dict:
-        vocab = {self.convert_ids_to_tokens(i): i for i in range(self.vocab_size)}
+        vocab = {self.convert_ids_to_tokens(
+            i): i for i in range(self.vocab_size)}
         vocab.update(self.added_tokens_encoder)
         return vocab
 
@@ -291,10 +295,12 @@ class SMALL100Tokenizer(PreTrainedTokenizer):
         if not save_dir.is_dir():
             raise OSError(f"{save_directory} should be a directory")
         vocab_save_path = save_dir / (
-            (filename_prefix + "-" if filename_prefix else "") + self.vocab_files_names["vocab_file"]
+            (filename_prefix + "-" if filename_prefix else "") +
+            self.vocab_files_names["vocab_file"]
         )
         spm_save_path = save_dir / (
-            (filename_prefix + "-" if filename_prefix else "") + self.vocab_files_names["spm_file"]
+            (filename_prefix + "-" if filename_prefix else "") +
+            self.vocab_files_names["spm_file"]
         )
 
         save_json(self.encoder, vocab_save_path)
@@ -322,7 +328,8 @@ class SMALL100Tokenizer(PreTrainedTokenizer):
     def _build_translation_inputs(self, raw_inputs, tgt_lang: Optional[str], **extra_kwargs):
         """Used by translation pipeline, to prepare inputs for the generate function"""
         if tgt_lang is None:
-            raise ValueError("Translation requires a `tgt_lang` for this model")
+            raise ValueError(
+                "Translation requires a `tgt_lang` for this model")
         self.tgt_lang = tgt_lang
         inputs = self(raw_inputs, add_special_tokens=True, **extra_kwargs)
         return inputs
@@ -332,7 +339,7 @@ class SMALL100Tokenizer(PreTrainedTokenizer):
 
     def _switch_to_target_mode(self):
         self.prefix_tokens = None
-        self.suffix_tokens = [self.eos_token_id]        
+        self.suffix_tokens = [self.eos_token_id]
 
     def set_lang_special_tokens(self, src_lang: str) -> None:
         """Reset the special tokens to the tgt lang setting. No prefix and suffix=[eos, tgt_lang_code]."""

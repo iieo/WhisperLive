@@ -108,16 +108,16 @@ class TestServerInferenceAccuracy(unittest.TestCase):
 
     def test_inference(self):
         client = TranscriptionClient(
-            "localhost", "8005", model="base.en", lang="en",
+            "localhost", "8005", model="base.en", lang="de",
         )
         client("assets/jfk.flac")
         self.check_prediction("output.srt")
 
     def test_simultaneous_inference(self):
         client1 = Client(
-            "localhost", "8005", model="base.en", lang="en", srt_file_path="transcript1.srt")
+            "localhost", "8005", model="base.en", lang="de", srt_file_path="transcript1.srt")
         client2 = Client(
-            "localhost", "8005", model="base.en", lang="en", srt_file_path="transcript2.srt")
+            "localhost", "8005", model="base.en", lang="de", srt_file_path="transcript2.srt")
         tee = TranscriptionTeeClient([client1, client2])
         tee("assets/jfk.flac")
         self.check_prediction("transcript1.srt")

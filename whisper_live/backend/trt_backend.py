@@ -57,7 +57,7 @@ class ServeClientTensorRT(ServeClientBase):
             same_output_threshold,
         )
 
-        self.language = language if multilingual else "en"
+        self.language = language if multilingual else "de"
         self.task = task
         self.eos = False
         self.max_new_tokens = max_new_tokens

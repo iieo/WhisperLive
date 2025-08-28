@@ -38,7 +38,7 @@ class Client:
         same_output_threshold=10,
         transcription_callback=None,
         enable_translation=False,
-        target_language="fr",
+        target_language="de",
         translation_callback=None,
         translation_srt_file_path="output_translated.srt",
     ):
@@ -805,7 +805,7 @@ class TranscriptionClient(TranscriptionTeeClient):
         same_output_threshold=10,
         transcription_callback=None,
         enable_translation=False,
-        target_language="fr",
+        target_language="de",
         translation_callback=None,
         translation_srt_file_path="./output_translated.srt",
     ):

@@ -68,7 +68,7 @@ class AudioWebSocket: NSObject, URLSessionWebSocketDelegate {
     private func sendInitialJSON() {
         let jsonPayload: [String: Any] = [
             "uid": uid,
-            "language": "en",
+            "language": "de",
             "task": "transcribe",
             "model": modelSize,
             "use_vad": true,
