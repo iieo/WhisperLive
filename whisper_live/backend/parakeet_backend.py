@@ -200,6 +200,97 @@ class ServeClientParakeet(ServeClientBase):
             print(f"[Parakeet] Failed to load model: {e}")
             raise
 
+    def transcribe_audio_batch(self, input_samples):
+        """
+        Transcribe a batch of audio clips using Parakeet.
+
+        Args:
+            input_samples: A list of audio numpy arrays.
+
+        Returns:
+            A list of lists of segments, where each inner list corresponds
+            to the transcription result for an audio clip in the input batch.
+        """
+        if ServeClientParakeet.SINGLE_MODEL and self.single_model:
+            ServeClientParakeet.SINGLE_MODEL_LOCK.acquire()
+
+        batch_results = []
+        temp_paths = []
+        try:
+            # Create temporary WAV files for each sample in the batch
+            for input_sample in input_samples:
+                temp_fd, temp_path = tempfile.mkstemp(
+                    suffix='.wav', dir=self.temp_dir)
+                os.close(temp_fd)
+                temp_paths.append(temp_path)
+
+                # Ensure audio is float32
+                if input_sample.dtype != np.float32:
+                    input_sample = input_sample.astype(np.float32)
+
+                # Normalize to [-1, 1]
+                max_val = np.max(np.abs(input_sample))
+                if max_val > 1.0:
+                    input_sample = input_sample / max_val
+
+                # Write WAV file, handle very quiet audio
+                if np.max(np.abs(input_sample)) < 0.01:
+                    sf.write(temp_path, np.zeros_like(
+                        input_sample), self.sample_rate)
+                else:
+                    sf.write(temp_path, input_sample, self.sample_rate)
+
+            # Transcribe the batch of files if any paths were created
+            if temp_paths:
+                outputs = self.transcriber.transcribe(temp_paths)
+
+                if outputs and len(outputs) == len(input_samples):
+                    # Process each result in the batch
+                    for i, output in enumerate(outputs):
+                        transcript_text = ""
+                        input_sample = input_samples[i]
+
+                        # Extract text from output
+                        if hasattr(output, 'text'):
+                            transcript_text = output.text.strip()
+                        elif isinstance(output, str):
+                            transcript_text = output.strip()
+                        else:
+                            transcript_text = str(output).strip()
+
+                        if transcript_text:
+                            # Create segment in Whisper-compatible format
+                            segment = type('Segment', (), {
+                                'text': transcript_text,
+                                'start': 0.0,
+                                'end': len(input_sample) / self.sample_rate,
+                                'no_speech_prob': 0.0,
+                                'tokens': [],
+                                'temperature': 0.0,
+                                'avg_logprob': 0.0,
+                                'compression_ratio': 0.0,
+                                'words': None
+                            })()
+                            batch_results.append([segment])
+                        else:
+                            # Append an empty list if no transcription
+                            batch_results.append([])
+                else:
+                    # If transcription fails or returns unexpected results,
+                    # create empty results for the whole batch.
+                    batch_results = [[] for _ in input_samples]
+
+        finally:
+            # Clean up all temp files
+            for path in temp_paths:
+                if os.path.exists(path):
+                    os.unlink(path)
+
+            if ServeClientParakeet.SINGLE_MODEL and self.single_model:
+                ServeClientParakeet.SINGLE_MODEL_LOCK.release()
+
+        return batch_results
+
     def transcribe_audio(self, input_sample):
         """
         Transcribe audio using Parakeet
