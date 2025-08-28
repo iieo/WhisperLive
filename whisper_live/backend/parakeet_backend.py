@@ -37,6 +37,7 @@ class ServeClientParakeet(ServeClientBase):
         same_output_threshold=7,
         cache_path="~/.cache/whisper-live/",
         translation_queue=None,
+        preloaded_model=None,
     ):
         """
         Initialize Parakeet client for streaming ASR.
@@ -96,7 +97,12 @@ class ServeClientParakeet(ServeClientBase):
         # Load model
         model_loaded = False
         try:
-            if single_model:
+            if preloaded_model is not None:
+                # Use pre-loaded model from server
+                self.transcriber = preloaded_model
+                logging.info("[Parakeet] Using pre-loaded model from server")
+                print("[Parakeet] Using pre-loaded model from server")
+            elif single_model:
                 with ServeClientParakeet.SINGLE_MODEL_LOCK:
                     if ServeClientParakeet.SINGLE_MODEL is None:
                         self.create_model(self.device)

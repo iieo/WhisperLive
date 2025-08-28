@@ -158,6 +158,39 @@ class TranscriptionServer:
         self.no_voice_activity_chunks = 0
         self.use_vad = True
         self.single_model = False
+        self.preloaded_parakeet_model = None
+
+    def _preload_parakeet_model(self):
+        """Pre-load the parakeet model at server startup"""
+        try:
+            import torch
+            import nemo.collections.asr as nemo_asr
+            
+            logging.info("[Server] Pre-loading Parakeet model...")
+            print("[Server] Pre-loading Parakeet model...")
+            
+            # Load Parakeet model from NVIDIA NGC
+            model = nemo_asr.models.ASRModel.from_pretrained(
+                model_name="nvidia/parakeet-tdt-0.6b-v3"
+            )
+            
+            # Move to GPU if available
+            if torch.cuda.is_available():
+                logging.info("[Server] Moving Parakeet model to CUDA...")
+                print("[Server] Moving Parakeet model to CUDA...")
+                model = model.cuda()
+            
+            # Set to evaluation mode
+            model.eval()
+            
+            self.preloaded_parakeet_model = model
+            logging.info("[Server] Parakeet model pre-loaded successfully")
+            print("[Server] Parakeet model pre-loaded successfully")
+            
+        except Exception as e:
+            logging.error(f"[Server] Failed to pre-load Parakeet model: {e}")
+            print(f"[Server] Failed to pre-load Parakeet model: {e}")
+            self.preloaded_parakeet_model = None
 
     def initialize_client(
         self, websocket, options, faster_whisper_custom_model_path,
@@ -223,7 +256,8 @@ class TranscriptionServer:
                     same_output_threshold=options.get(
                         "same_output_threshold", 10),
                     cache_path=self.cache_path,
-                    translation_queue=translation_queue
+                    translation_queue=translation_queue,
+                    preloaded_model=self.preloaded_parakeet_model
                 )
                 logging.info("Running Parakeet backend.")
             except Exception as e:
@@ -489,6 +523,10 @@ class TranscriptionServer:
             else:
                 logging.info(
                     "Single model mode currently only works with custom models.")
+        
+        # Pre-load parakeet model if single_model mode is enabled and parakeet backend is used
+        if single_model and backend == "parakeet":
+            self._preload_parakeet_model()
         if not BackendType.is_valid(backend):
             raise ValueError(
                 f"{backend} is not a valid backend type. Choose backend from {BackendType.valid_types()}")
